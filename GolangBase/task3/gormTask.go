@@ -42,9 +42,10 @@ type Employee struct {
 
 // User
 type User struct {
-	ID    uint
-	Name  string
-	Posts []Post
+	ID           uint
+	Name         string
+	Posts        []Post
+	ArticleCount uint
 }
 
 // Post
@@ -129,6 +130,19 @@ func findEmployee(db *gorm.DB, dept string) {
 	fmt.Println("薪水最高的：", one)
 }
 
+func (p *Post) AfterCreate(db *gorm.DB) (err error) {
+	return db.Model(&User{}).Where("id=?", p.UserID).UpdateColumn("article_count", gorm.Expr("article_count + ?", 1)).Error
+}
+
+func (c *Comment) AfterDelete(db *gorm.DB) (err error) {
+	var count int64
+	db.Model(&Comment{}).Where("post_id =?", c.PostID).Count(&count)
+	if count == 0 {
+		return db.Model(&Post{}).Where("id=?", c.PostID).Update("comment_status", "无评论").Error
+	}
+	return nil
+}
+
 func main() {
 	// 1.SQL语句练习-基本CRUD操作
 
@@ -174,22 +188,22 @@ func main() {
 			},
 		},
 	}
-    // 6.进阶gorm-模型定义-创建这些模型对应的数据库表  
+	// 6.进阶gorm-模型定义-创建这些模型对应的数据库表
 	//db.Create(&user)
 	fmt.Print(user)
 
 	// 7. 进阶gorm-查询某个用户发布的所有文章及其对应的评论信息
 	var user2 User
-	userID :=1
-	err := db.Preload("Posts.Comments").First(&user2,userID).Error
-	if err !=nil {
+	userID := 1
+	err := db.Preload("Posts.Comments").First(&user2, userID).Error
+	if err != nil {
 		fmt.Println("查询失败：", err)
 	} else {
-		fmt.Println("用户：%s\n",user2.Name)
-		for _,post := range user2.Posts {
-			fmt.Printf("文章：%s\n",post.PostName)
-			for _,comment := range post.Comments {
-				fmt.Print(" 评论：%s\n",comment.Content)
+		fmt.Println("用户：%s\n", user2.Name)
+		for _, post := range user2.Posts {
+			fmt.Printf("文章：%s\n", post.PostName)
+			for _, comment := range post.Comments {
+				fmt.Print(" 评论：%s\n", comment.Content)
 			}
 		}
 	}
@@ -197,12 +211,13 @@ func main() {
 	// 8.进阶gorm-使用Gorm查询评论数量最多的文章信息。
 	var result PostWithCommentCount
 	db.Debug().Model(&Post{}).
-	Select("posts.*,count(comments.id) as comment_count").
-	Joins("left join comments on comments.post_id = posts.id").
-	Group("posts.id").
-	Order("comment_count desc").
-	Limit(1).
-	Scan(&result)
+		Select("posts.*,count(comments.id) as comment_count").
+		Joins("left join comments on comments.post_id = posts.id").
+		Group("posts.id").
+		Order("comment_count desc").
+		Limit(1).
+		Scan(&result)
 	fmt.Printf("评论最多的文章：%s，评论数：%d\n", result.PostName, result.CommentCount)
-
+	// 9.钩子函数1 创建时自动更新用户的文章数量
+	// 10.钩子函数2 在评论删除时检查文章的评论数量，如果评论数量为 0，则更新文章的评论状态为 "无评论"。
 }
