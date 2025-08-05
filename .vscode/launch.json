@@ -6,11 +6,11 @@
     "configurations": [
 
         {
-            "name": "Launch file",
+            "name": "ethclient_query.go",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "D:/GO/goproject/vs/Web3Learning/GolangBase/task4/task4.go"
+            "program": "D:/GO/goproject/vs/Web3Learning/ethclient/query.go"
         },
 
 
