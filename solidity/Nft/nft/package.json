@@ -1,0 +1,13 @@
+{
+    "name": "nft",
+    "version": "1.0.0",
+    "private": true,
+    "type": "commonjs",
+    "scripts": {
+        "upload:image": "node scripts/pinata-upload-image.js",
+        "upload:meta": "node scripts/pinata-upload-metadata.js",
+        "upload:e2e": "node scripts/pinata-end-to-end.js"
+    },
+    "dependencies": {},
+    "devDependencies": {}
+}
