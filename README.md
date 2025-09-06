@@ -1,4 +1,2 @@
-# Web3Learning
-中文无法插入表时，考虑执行此sql：
-ALTER TABLE users CONVERT TO CHARACTER 
-SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+# 学习地址
+https://github.com/AmazingAng/WTF-Solidity/tree/main/01_HelloWeb3
