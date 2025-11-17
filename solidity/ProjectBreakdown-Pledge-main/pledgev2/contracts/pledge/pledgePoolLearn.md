@@ -68,3 +68,31 @@ function setPause() public validCall { ... }
 modifier stateMatch(uint256 _pid) { ... }
 ...
 ```
+
+综合整个项目代码，请问这些合约函数是如何调用的
+
+[6 tools called]
+
+这些 Solidity 函数本身并没有在 Go 后端里直接被调用；它们位于 `pledgev2/contracts/pledge/PledgePool.sol`，最终都是通过链上交易触发，调用方式可分两类：
+
+- **管理员（多签）专属函数**  
+  `setFee`、`setSwapRouterAddress`、`setFeeAddress`、`setMinAmount`、`createPoolInfo`、`settle`、`finish`、`liquidate`、`setPause` 等都带 `validCall` 修饰符。`validCall` 来源于 `multiSignatureClient`，内部通过 `IMultiSignature.getValidSignature` 校验多签批准：
+  
+```22:38:pledgev2/contracts/multiSignature/multiSignatureClient.sol
+modifier validCall(){
+    checkMultiSignature();
+    _;
+}
+```
+
+  也就是说，运营方要先在多签合约里收集足够签名，再由多签合约代表他们发起对 `PledgePool` 的交易，这些函数才会成功执行，和后端 API 没有直接关系。
+
+- **普通用户函数**  
+  像 `depositLend`、`refundLend`、`claimLend`、`withdrawLend`、`depositBorrow`、`refundBorrow`、`claimBorrow`、`withdrawBorrow`、`emergency*` 等都没有 `validCall`，任何地址都可在满足时间/状态限制、通过 `ReentrancyGuard` 检查后直接调用。这些场景通常由前端 DApp 或脚本（例如用户钱包的合约交互界面）发起交易完成，不需要后端参与。
+
+后端 `pledge-backend` 的 REST 服务（`poolBaseInfo`、`poolDataInfo`、`price` 等，见 `pledge-backend/api/routes/route.go`）主要完成链下数据读写：它从 MySQL/Redis 中读取池信息、多签配置或行情价格，并不负责执行任何链上写操作。换句话说：
+
+- 用户端或运营端 → 直接与链上合约交互，触发合约函数；
+- 后端 API → 只提供查询、认证、多签账户配置等辅助信息，供前端展示或管理之用。
+
+因此，“这些合约函数如何调用”可以概括为：管理员类函数由多签合约代表调用，用户类函数由钱包或脚本直接向 `PledgePool` 发送交易，而后端并未封装任何调用逻辑。
