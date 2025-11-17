@@ -96,3 +96,56 @@ modifier validCall(){
 - 后端 API → 只提供查询、认证、多签账户配置等辅助信息，供前端展示或管理之用。
 
 因此，“这些合约函数如何调用”可以概括为：管理员类函数由多签合约代表调用，用户类函数由钱包或脚本直接向 `PledgePool` 发送交易，而后端并未封装任何调用逻辑。
+
+哪些前端代码调用的合约函数？
+
+- `PoolServer` 实际封装了前端访问 `PledgePool` 合约的所有方法，包括只读的 `poolLength/poolBaseInfo/poolDataInfo` 以及交易类的 `depositLend/depositBorrow/claimLend/claimBorrow/refundLend/refundBorrow/withdrawLend/withdrawBorrow/emergencyLendWithdrawal/emergencyBorrowWithdrawal` 等；每个方法都会根据当前链 ID 选择合适的合约地址并发起 `contract.methods.xxx().call/send`。  
+```11:138:pledge-fe/src/services/PoolServer.ts
+async depositLend(pid, value, coinAddress, chainId) {
+  const contract = getPledgePoolContract(...);
+  let options = await gasOptions();
+  if (coinAddress === '0x000...000') {
+    options = { ...options, value };
+  }
+  return await contract.methods.depositLend(pid, value).send(options);
+}
+```
+
+- 这些服务被各个界面直接引用，从而把具体的合约函数绑定到 UI 操作：  
+  - `借出/借入` 面板在“Approve & Lend/Borrow”按钮里调用 `depositLend`、`depositBorrow`。  
+```828:941:pledge-fe/src/components/Coin_pool/index.tsx
+services.PoolServer.depositLend(pid, num, poolinfo[pid]?.Sp ?? 0, chainId)
+...
+services.PoolServer.depositBorrow(pid, borrownum, timestamp, poolinfo[pid]?.Jp ?? 0, chainId)
+```
+  - `AccessTab`（领取 SP/JP）根据 Tab 选择触发 `getclaimLend` 或 `getclaimBorrow`，并在成功后刷新 `userLendInfo/userBorrowInfo`。  
+```229:256:pledge-fe/src/components/AccessTab/index.tsx
+await services.PoolServer.getclaimLend((Number(props.key) - 1).toString(), chainId)
+...
+services.PoolServer.getuserLendInfo((Number(props.key) - 1).toString(), chainId)
+```
+  - `ClaimTime` 负责到期赎回本金，分别调用 `getwithdrawLend` 和 `getwithdrawBorrow`；同组件也会查询用户在池子的 SP/JP 余额。  
+```233:263:pledge-fe/src/components/ClaimTime/index.tsx
+services.PoolServer.getwithdrawLend(pid, Spnum, chainId)
+...
+services.PoolServer.getuserBorrowInfo(pid.toString(), chainId)
+```
+  - `Refund` 弹窗覆盖 `refundLend/refundBorrow` 与 `emergencyLendWithdrawal/emergencyBorrowWithdrawal` 的入口。  
+```199:261:pledge-fe/src/components/Refund/index.tsx
+services.PoolServer.getemergencyLendWithdrawal(props.key - 1, chainId)
+...
+services.PoolServer.getrefundBorrow(props.key - 1, chainId)
+```
+  - `PortfolioList`、`Market_Mode` 等页面在渲染个人仓位或市场列表时调用 `getuserLendInfo`、`getuserBorrowInfo` 来读取合约 `mapping` 中的用户状态。  
+```47:111:pledge-fe/src/components/PortfolioList/index.tsx
+services.PoolServer.getuserLendInfo((props.props.key - 1).toString(), chainId)
+```
+
+- 另外，所有 ERC20 的 `approve/allowance/balanceOf` 操作由 `ERC20Server` 封装，并在 `Coin_pool` 等组件的授权流程中调用，为 `depositLend/depositBorrow` 等函数提供必要的代币授权。  
+```15:31:pledge-fe/src/services/ERC20Server.ts
+await contract.methods.approve(...).send(options);
+...
+return await contract.methods.allowance(owner, ...).call();
+```
+
+综上，前端通过 `PoolServer`+`ERC20Server` 两层封装把 `PledgePool` 合约的核心函数全部接入 UI：用户在借出/借入、退款、到期赎回、紧急退出等界面进行的每一次交互，最终都对应着上述合约方法的调用。
